@@ -113,16 +113,6 @@ var main = function() {
 		console.log("game sid: " + sid);
 		$(location).attr('href', "/joingame/" + sid);
 	});
-	
-	$('form').submit(function(){
-    	socket.emit('chat message', $('#m').val());
-    	$('#m').val('');
-    	return false;
-  	});
-  	
-  	socket.on('chat message', function(msg){
-    	$('#messages').append($('<li>').text(msg));
-  	});
 };
 
 $(document).ready(main);

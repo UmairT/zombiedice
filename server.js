@@ -29,6 +29,17 @@ var	socketIO = require('socket.io'),
 var sess;
 var lobbyclients = [];
 var gameclients = [];
+var dicestats = {};
+
+dicestats.brains = 0;
+dicestats.shotguns = 0;
+
+//for both players 
+// dicestats.humanbrains = 0;
+// dicestats.humanshotguns = 0;
+// 
+// dicestats.zombiebrains = 0;
+// dicestats.zombieshotguns = 0;
 
 console.log("Server is listening at http://localhost:3000/");
 
@@ -167,11 +178,6 @@ app.get('/lobby', function(req, res) {
 	}
 });
 
-// Player chat in game
-app.get('/gameboard', function(req, res){
-  	res.redirect("/gameboard.html");
-});
-
 app.post("/registration", function (req,res) {
 	
 	var valid = true;
@@ -188,6 +194,115 @@ app.post("/userlogin", function (req,res) {
 	var userinfo = req.body;
 	connectDB(login, userinfo, req, res);
 });
+
+
+//////////////// Game Logic ///////////////////////
+
+function rollDice(){
+	dicestats.dice10 = "";
+	dicestats.dice20 = "";
+	dicestats.dice30 = "";
+	
+	var options = ["brain", "brain", "feet", "feet", "shotgun", "shotgun"];
+	var dice1 = options[Math.floor((Math.random() * options.length))]; 
+	var dice2 = options[Math.floor((Math.random() * options.length))]; 
+	var dice3 = options[Math.floor((Math.random() * options.length))]; 
+
+	if(dice1 === "brain"){
+		dicestats.dice10 = "Brain";
+		dicestats.brains += 1;
+	}else if(dice1 === "feet"){
+		dicestats.dice10 = "Feet";
+	}
+	else
+	{
+		dicestats.dice10 = "Shotgun";
+		dicestats.shotguns += 1;
+	}
+
+	if(dice2 === "brain"){
+		dicestats.dice20 = "Brain";
+		dicestats.brains += 1;
+	}else if(dice2 === "feet"){
+		dicestats.dice20 = "Feet";
+	}
+	else
+	{
+		dicestats.dice20 = "Shotgun";
+		dicestats.shotguns += 1;
+	}
+
+	if(dice3 === "brain"){
+		dicestats.dice30 = "Brain";
+		dicestats.brains += 1;
+	}else if(dice3 === "feet"){
+		dicestats.dice30 = "Feet";
+	}
+	else
+	{
+		dicestats.dice30 = "Shotgun";
+		dicestats.shotguns += 1;
+	}
+	
+	if (dicestats.brains === 13) {
+		console.log("Winner!")
+	} else if (dicestats.shotguns >= 3) {
+		dicestats.brains = 0;
+		dicestats.shotguns = 0;
+		console.log("3 Shotguns reached.")
+	}
+	
+}
+
+app.get('/rolldice', function(req, res){
+	console.log("Dice Rolling");
+	rollDice();
+	res.json(dicestats);
+});
+
+// function stopAndScore () {
+// 	if (dicestats.shotguns >= 3) {
+// 		var myBrains = dicestats.brains;
+// 	}
+// 	dicestats.brains = myBrains;
+// }
+// 
+// app.get('/stopandscore', function(req, res){
+// 	console.log("Stop Rolling");
+// 	stopAndScore();
+// 	res.json(dicestats);
+// });
+
+
+
+function checkDice(firstDice, secondDice, thirdDice) {
+	var array = [firstDice, secondDice, thirdDice];
+	var arraylen = array.length;
+	for(var i = 0; i < arraylen; i++){
+		if(array[i] === "Brain"){
+			array[i] = "<image src='images/brain_roll.png'>";
+		}
+		else if(array[i] === "Feet"){
+			array[i] = "<image src='images/foot_roll.png'>";
+		}
+		else
+		{
+			array[i] = "<image src='images/shotgun_roll.png'>";
+		}
+	}
+
+	return array;
+}
+
+///////////////////////////////////////////////////
+
+
+var human,
+	humansocket,
+	humanname,
+	zombie,
+	zombiesocket,
+	zombiename;
 
 //lobby socket io interaction
 nspLobby.on('connection', function(socket) {
@@ -212,6 +327,7 @@ nspLobby.on('connection', function(socket) {
 	
 	//send challenge request
 	socket.on('challenge', function(sid) {
+		human = sid;
 		console.log("recieved challenge for " + sid);
 		var index = findIndex(lobbyclients, "sid", socket.id);
 		nspLobby.connected[sid].emit("challenge recieved", lobbyclients[index].username, socket.id);
@@ -224,12 +340,14 @@ nspLobby.on('connection', function(socket) {
 	});
 });
 
+
+//human p2
+//zombie p1
 //game io interaction
 nspGame.on ('connection', function(socket) {
 	console.log(sess.username + ' joined game');
 	var p1Brains = 0,
 		p2Brains = 0,
-		currentPlayer,
 		dice1, dice2, dice3;
 	
 	//add new user to clients
@@ -245,41 +363,89 @@ nspGame.on ('connection', function(socket) {
 		var opponentid = sess.opponentgameid;
 		var username = sess.username;
 		nspGame.connected[opponentid].emit('handshake', socket.id, username, 0);
+
+		//testing is the person that was challenged? zombie challenge human -> opponentid is human!
+		
+		nspGame.emit('Player', opponentid, socket.id, username);
+		console.log('opponentid ' + opponentid);
+		human = opponentid;
+		humanname = username;
+		humansocket = socket.id;
+		//console.log('human' + human);
+		nspGame.connected[human].emit('disable', socket.id);
 	}
 	
+
+
+	///changed the bottom half of this functions
 	socket.on('return handshake', function(sid) {
+		//testing for disable  zombie hmmmm
+		//nspGame.connected[human].emit('disable', sid);  
+
+		console.log('Human ' + human);
+		console.log('Zombie ' + zombie);
 		console.log("handshake returned");
 		var index = findIndex(gameclients, "sid", socket.id);
 		var username = gameclients[index].username;
 		nspGame.connected[sid].emit("handshake", socket.id, username, 1);
-	});
-	
-	// chat code
-	io.on('connection', function(socket){
-  		console.log('a user connected');
-  		socket.on('disconnect', function(){
-    		console.log('user disconnected');
-  		});
-	});
-
-	io.on('connection', function(socket){
-  		socket.on('chat message', function(msg){
-    		console.log('message: ' + msg);
-  		});
+		zombie = sid;
+		zombiesocket = socket.id;
+		zombiename = username;
+		///testing challenge player goes first
+		//nspGame.emit('Player', sid, username);
+		//nspGame.connected[sid].emit('Player', sid, username);
+		//nspGame.connected[sid].emit('disable', sid);
 	});
 
-	io.on('connection', function(socket){
-  		socket.on('chat message', function(msg){
-    		io.emit('chat message', msg);
-  		});
+
+	/////dice rolling code and stop button actions 
+	socket.on('diceroll', function(data){
+		console.log('dice json recieved');
+		var images = checkDice(data.dice10, data.dice20, data.dice30);
+		nspGame.emit('dicerollresult', data, images);
 	});
 
-	socket.on('stop and score', function(sid) {
-		console.log("score saved");
-		var index = findIndex(gameclients, "sid", socket.id);
-		var username = gameclients[index].username;
-		nspGame.connected[sid].emit("stop", socket.id, username, 1);
+
+	socket.on('stopScore', function(sid) {
+
+		console.log("sid when stopScore " + sid);
+		var username,
+			tempsocket;
+		//check for turns 
+		if(sid === zombie){
+			console.log('disable zombie player');
+			sid = human;
+			tempsocket = humansocket;
+			username = humanname;
+			nspGame.connected[zombie].emit('disable', zombiesocket);  //disable prev player
+		}
+		else if(sid === human){
+			console.log('disable human player');
+			sid = zombie;
+			tempsocket = zombiesocket;
+			username = zombiename;
+			nspGame.connected[human].emit('disable', humansocket); 
+		}
+
+		nspGame.emit('Player', sid, tempsocket, username);
+		nspGame.connected[sid].emit('enable', tempsocket);
+		console.log("enable " + sid);
+		
+		//nspGame.connected[human].emit('enable', humansocket);  //enables next player
+		//disaples buttons for player waiting
+		//nspGame.connected[sid].emit("stop", socket.id, username, 1);
+		// console.log("score saved");
+		//var index = findIndex(gameclients, "sid", socket.id);
+		//var username = gameclients[index].username;
+		//turn for next player
 	});
+
+	// socket.on('stop and score', function(sid) {
+	// 	console.log("score saved");
+	// 	var index = findIndex(gameclients, "sid", socket.id);
+	// 	var username = gameclients[index].username;
+	// 	nspGame.connected[sid].emit("stop", socket.id, username, 1);
+	// });
 	
 	socket.on('disconnect', function () {
 		console.log('someone disconnected');
